@@ -1,0 +1,59 @@
+// The key that ties a chart's colours to the two map pins the reader picked,
+// labelled 1 and 2 like the pins.
+
+import { useTheme } from '../hooks/useTheme.jsx'
+import { useLanguage } from '../hooks/useLanguage.jsx'
+import { chartColorsFor } from '../utils/theme.js'
+import { useNationHighlight, highlightHandlers } from '../hooks/useNationHighlight.jsx'
+import { nationLabel } from '../content/nations.js'
+
+const STRINGS = {
+  en: (i, name) => `Selection ${i}: ${name}. Focus to emphasise it on every chart in this section.`,
+  fr: (i, name) => `Sélection ${i}\u00A0: ${name}. Sélectionnez pour la mettre en évidence sur chaque graphique de cette section.`,
+}
+
+// The key tying a chart series to a map pin. The swatch carries the same
+// number the pin does, so the two picks are told apart by a digit and not only
+// by a colour -- the blue and the gold are close in lightness, and a reader
+// who can't separate them by hue still has "1" and "2".
+// Each chip is also the handle for the cross-chart highlight: pointing at a
+// country here dims the other one on every chart on the page. tabIndex makes
+// that reachable from the keyboard, and the chips carry no other behaviour, so
+// there's nothing a reader can trigger by accident.
+export default function SelectionLegend({ selected }) {
+  const { theme } = useTheme()
+  const { language } = useLanguage()
+  const palette = chartColorsFor(theme)
+  const { setHighlight } = useNationHighlight()
+
+  if (!selected || selected.length === 0) return null
+
+  // role="note" plus an explicit name on each chip below: a focusable element
+  // with neither announces as unlabelled, and the digit that tells the two
+  // picks apart is drawn in an aria-hidden swatch. The chip is a div inside
+  // the <li> rather than the <li> itself, so the list stays a valid list.
+  return (
+    <ul className="mb-4 flex flex-wrap gap-4 text-sm">
+      {selected.map((name, i) => (
+        <li key={name}>
+          <div
+            tabIndex={0}
+            role="note"
+            aria-label={STRINGS[language](i + 1, nationLabel(name, language))}
+            className="flex cursor-help items-center gap-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            {...highlightHandlers(name, setHighlight)}
+          >
+            <span
+              className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[11px] font-bold leading-none"
+              style={{ backgroundColor: palette.selection[i], color: palette.onMark }}
+              aria-hidden="true"
+            >
+              {i + 1}
+            </span>
+            {nationLabel(name, language)}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}

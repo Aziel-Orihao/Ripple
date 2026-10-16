@@ -1,0 +1,151 @@
+/*
+  Theme variables, typography roles and document-level base styles.
+  Shared text styles live here -- reuse them rather than adding new ones.
+*/
+
+@layer base {
+  /*
+    Hide the browser scrollbar. The canoe in the header is the scroll readout,
+    and two position indicators at the edges of the same page is one too many.
+
+    A real trade-off: a scrollbar is an affordance as well as a readout, and
+    hiding it takes the drag gesture away. Everything else still works --
+    wheel, trackpad, touch, keyboard, find-in-page -- because
+    `scrollbar-width: none` hides the control without changing the container.
+
+    APPLIED EVERYWHERE, NOT ONLY TO THE DOCUMENT. An internal scrolling region
+    without a scrollbar can look truncated, so the regions that need it carry
+    their own affordance instead: .locked-scroll fades its bottom edge while it
+    overflows, and .slide-more announces a slide with more below it. With those
+    in place, hiding every scrollbar keeps the panels consistent, rather than
+    showing bars on some and not others depending on how much text a storm
+    has.
+
+    Nothing about scrolling changes. `scrollbar-width: none` and a zero-size
+    ::-webkit-scrollbar hide the control without altering the container or the
+    scroll box, so wheel, trackpad, touch, keyboard, find-in-page and
+    scroll-into-view all behave exactly as before. The only thing lost is the
+    drag gesture on the bar itself.
+  */
+  html {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* legacy Edge */
+  }
+
+  html::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Edge */
+  }
+
+  * {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* legacy Edge */
+  }
+
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none; /* Chrome, Safari, Edge */
+  }
+
+  /*
+    The --color-* variables are NOT declared here. They live in
+    styles/tokens.css, which is generated from styles/tokens.js -- the one place
+    a theme colour is typed. utils/theme.js reads the same module, so the
+    hex the chart renderers use and the RGB triples Tailwind's <alpha-value>
+    syntax needs cannot drift apart. See the note at the top of tokens.js.
+  */
+
+  /*
+    Updated by App.jsx to keep in-page navigation clear of the
+    fixed header.
+  */
+  html {
+    --header-height: 96px;
+    scroll-padding-top: calc(var(--header-height) + 16px);
+
+    /* Native controls, form fields and any scrollbar a browser still draws
+       follow the system setting, the same source the .dark class comes from
+       (hooks/useTheme.jsx). Paired with the color-scheme meta in index.html,
+       which applies before this stylesheet loads. */
+    color-scheme: light dark;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
+  /*
+    Avoid single-word last lines in headings, and orphans in body text.
+    Unsupported browsers ignore both and wrap as before.
+  */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  body {
+    @apply bg-sand text-ink antialiased;
+
+    /* Prevent accidental horizontal scrolling. */
+    overflow-x: hidden;
+
+    /* No colour transition: a system theme change switches instantly (see
+       hooks/useTheme.jsx). */
+  }
+
+  /*
+    NO CUSTOM ARROW CURSOR, on purpose.
+
+    A pointer is one of the few pieces of the interface a reader may already
+    have tuned for themselves -- size, contrast, a system-wide replacement --
+    and those settings are invisible to CSS, so a page that swaps the arrow
+    overrides an accessibility choice it cannot see it is overriding. Nothing
+    about this site needed its own arrow.
+
+    What stays is the part that carries information: pointer on anything
+    pressable, help on a note that explains itself, not-allowed on a disabled
+    control. Those describe behaviour rather than replacing the reader's own
+    pointer.
+  */
+  a[href],
+  button,
+  summary,
+  [role="button"],
+  .marker,
+  .chart-mark {
+    cursor: pointer;
+  }
+
+  .data-note {
+    cursor: help;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  /* Branded text selection. */
+  ::selection {
+    background-color: #5b8fa3;
+    color: #eaf3f7;
+  }
+
+  /* Shared keyboard focus styling. */
+  .marker:focus-visible,
+  button:focus-visible,
+  .data-note:focus-visible {
+    outline: 2px solid rgb(var(--color-ink));
+    outline-offset: 2px;
+  }
+
+  .data-note:focus-visible {
+    border-radius: 2px;
+  }
+}

@@ -1,0 +1,130 @@
+// The strip under the header showing what the reader has chosen so far (the
+// storm and the nation pair), with buttons to clear each choice.
+
+import { formatNationList } from '../utils/formatNationList.js'
+import { useLanguage } from '../hooks/useLanguage.jsx'
+import { nationLabel } from '../content/nations.js'
+
+const STRINGS = {
+  en: {
+    storm: 'Storm',
+    country: 'Country',
+    clearTitle: 'Clear the country selection',
+    clear: 'Clear',
+    resetTitle: 'Clear the storm and start again',
+    reset: 'Reset',
+    notChosen: 'Not chosen',
+    notChosenMap: 'Not chosen yet \u2014 pick one on the map',
+    notChosenTimeline: 'Not chosen yet \u2014 pick one on the timeline',
+  },
+  fr: {
+    storm: 'Cyclone',
+    country: 'Pays',
+    clearTitle: 'Effacer la sélection de pays',
+    clear: 'Effacer',
+    resetTitle: 'Effacer le cyclone et recommencer',
+    reset: 'Réinitialiser',
+    notChosen: 'Non choisi',
+    notChosenMap: 'Pas encore choisi \u2014 sélectionnez-en un sur la carte',
+    notChosenTimeline: 'Pas encore choisi \u2014 sélectionnez-en un dans la chronologie',
+  },
+}
+
+// WHAT THE READER HAS CHOSEN, VISIBLE FROM EVERY SLIDE.
+//
+// The map is on one slide and the charts it drives are on the next three, so
+// the reader can no longer see a pick and its consequence at the same time.
+// This strip carries the current selection across every slide, says which
+// choice the story is waiting on when there isn't one yet, and can clear a
+// choice from anywhere.
+//
+// What it never does is navigate. Moving between slides is the footer's job
+// alone -- see the note in App.jsx.
+function Action({ children, onClick, title }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="shrink-0 rounded px-1.5 py-1 underline decoration-ink/30 underline-offset-2 opacity-soft transition-opacity duration-150 hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    >
+      {children}
+    </button>
+  )
+}
+
+// A label and its value, so "Harold 2020" is never mistaken for a heading and
+// the two facts the bar carries are told apart by structure rather than only by
+// colour.
+function Field({ label, children }) {
+  return (
+    <span className="flex min-w-0 items-baseline gap-1.5">
+      <span className="type-eyebrow shrink-0 opacity-45">{label}</span>
+      <span className="min-w-0 truncate">{children}</span>
+    </span>
+  )
+}
+
+export default function StoryStateBar({ storm, selectedNations, onClearNations, onReset }) {
+  const nations = selectedNations ?? []
+  const { language } = useLanguage()
+  const t = STRINGS[language]
+
+  return (
+    // One row on a phone, wrapping only from sm up. Two rows of state above
+    // fourteen sections of content is the header eating the story; nowrap plus
+    // truncation on the values keeps it to a single line at any width, and the
+    // values are short enough ("Pam · 2015", "Fiji + Tonga") that truncation
+    // almost never bites.
+    <div className="deck-status mt-1.5 flex flex-nowrap items-center gap-x-2.5 gap-y-1 overflow-hidden border-t border-ink/10 pt-1.5 text-xs sm:mt-2 sm:flex-wrap sm:gap-x-3 sm:pt-2">
+      {storm ? (
+        <>
+          <Field label={t.storm}>
+            <span className="font-medium text-accent">
+              {storm.name.replace(/^Cyclones? /, '')} &middot; {storm.year}
+            </span>
+          </Field>
+
+          <span aria-hidden="true" className="shrink-0 opacity-25">
+            |
+          </span>
+
+          {nations.length > 0 ? (
+            <>
+              <Field label={t.country}>
+                {formatNationList(nations.map((n) => nationLabel(n, language)), language)}
+              </Field>
+              <Action onClick={onClearNations} title={t.clearTitle}>
+                {t.clear}
+              </Action>
+            </>
+          ) : (
+            // Not styled as a warning. Nothing is broken -- the reader simply
+            // has not answered the next question yet, and the bar's job here is
+            // to say which question that is and where it is asked.
+            <Field label={t.country}>
+              {/* The long form only where it fits. On a phone the map slide is
+                  where this is answered and the reader is on their way to it;
+                  the short form still says the choice is outstanding. */}
+              <span className="opacity-soft">
+                <span className="sm:hidden">{t.notChosen}</span>
+                <span className="hidden sm:inline">{t.notChosenMap}</span>
+              </span>
+            </Field>
+          )}
+
+          <Action onClick={onReset} title={t.resetTitle}>
+            {t.reset}
+          </Action>
+        </>
+      ) : (
+        <Field label={t.storm}>
+          <span className="opacity-soft">
+            <span className="sm:hidden">{t.notChosen}</span>
+            <span className="hidden sm:inline">{t.notChosenTimeline}</span>
+          </span>
+        </Field>
+      )}
+    </div>
+  )
+}

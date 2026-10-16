@@ -1,0 +1,23 @@
+<!--
+  Favicon: a single ripple, the motif the site is named for and the same one
+  tiled behind the header (see BackgroundPattern.jsx -> ripples()).
+
+  Replaced the canoe hull, which read as an unidentifiable dark smear at true
+  16px: it is a wide, low, asymmetric silhouette, and those are exactly the
+  shapes that lose their identity when scaled down. Concentric circles survive
+  the same reduction because the shape is the spacing, and spacing is the last
+  thing to disappear.
+
+  Ring widths grow slightly outward so the centre reads as the strike point
+  even when the outer rings blur together. Ocean blue ground, matching the
+  wake in ScrollProgress and the map markers.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#5B8FA3" />
+  <g fill="none" stroke="#EAF3F7" stroke-linecap="round">
+    <circle cx="32" cy="32" r="4.5" stroke-width="4.5" />
+    <circle cx="32" cy="32" r="13" stroke-width="3.6" stroke-opacity="0.85" />
+    <circle cx="32" cy="32" r="21.5" stroke-width="2.8" stroke-opacity="0.62" />
+    <circle cx="32" cy="32" r="29" stroke-width="2" stroke-opacity="0.38" />
+  </g>
+</svg>

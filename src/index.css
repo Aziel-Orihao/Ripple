@@ -1,0 +1,128 @@
+/*
+  Entry stylesheet. The rules live in ./styles/ -- this file fixes the order,
+  which is load-bearing.
+
+  The @import statements come first because postcss-import requires it, and it
+  costs nothing: everything in those files sits inside an @layer, and Tailwind
+  hoists layered rules into the directives below wherever they were written.
+
+  What cannot move is unlayered CSS. It keeps its source position, so the
+  blocks at the bottom of this file have to stay after the directives --
+  above them, preflight would win.
+*/
+
+/* Generated from styles/tokens.js -- see scripts/build-tokens.mjs. First,
+   because everything below is painted with the variables it declares. */
+@import './styles/tokens.css';
+@import './styles/base.css';
+@import './styles/typography.css';
+/* After typography, because .figure-prose relaxes a width that .prose-column
+   and .prose-wide only ever talked about. Before slideshow and compact, which
+   both restate section selectors and have to keep winning. */
+@import './styles/layout.css';
+@import './styles/animations.css';
+@import './styles/slideshow.css';
+@import './styles/story.css';
+/* Self-contained: one component's rules, sharing no selector with any file
+   above, so its position here is convenience rather than load-bearing. */
+@import './styles/display-check.css';
+/* Last, deliberately. Several rules in here restate a selector that already
+   appears in slideshow.css at the same specificity, so source order is what
+   decides -- and the laptop layer has to be the one that wins. */
+@import './styles/compact.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  The deck's page changes and the language toggle go through one
+  ripple-droplet transition (utils/rippleTransition.js), which is plain WAAPI
+  rather than the View Transitions API, so there is nothing left here to scope
+  to a sweep class or to opt out of under reduced motion: rippleTransition.js
+  checks that itself, once, before it creates anything.
+*/
+
+/*
+  REDUCED MOTION IS ANSWERED IN FOUR PLACES, and this is only one of them.
+  Each block scopes to what its own file owns, which is right -- but it means
+  there is no single rule to read, so here is the map:
+
+    this file           the shared entrance, the deck's controls, the timeline's
+                        press invitation, the cross-chart dimming
+    styles/story.css    the atmosphere, the scrubber, the ending's four lines,
+                        the phone accordion
+    styles/slideshow.css the track, the panels, the "more below" nudge
+    utils/motion.js     the JavaScript half -- every D3 transition and the
+                        ripple page change ask it before they animate
+
+  Adding an animation means adding its no-motion form to whichever of these
+  owns it. None of them may carry information that is lost when switched off.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop-in,
+  .animate-tooltip-pop-in,
+  .cyclone-spin,
+  .deck-status,
+  .slide-panel[data-active="true"] .deck-count,
+  .press-target[aria-pressed="true"] {
+    animation: none;
+  }
+
+  /* The refusal shake is the exception: it is the only feedback a blocked
+     button gives, so it is kept and shortened rather than removed. Hover and
+     press displacement go -- they are decoration -- while the colour changes
+     stay, because those carry state. */
+  .deck-btn.is-refusing {
+    animation-duration: 120ms;
+  }
+
+  .deck-btn,
+  .deck-btn-arrow,
+  .press-target {
+    transition-property: background-color, border-color, box-shadow;
+  }
+
+  .deck-btn:hover,
+  .deck-btn:active,
+  .deck-btn-back:hover .deck-btn-arrow,
+  .deck-btn-next:hover:not(.is-blocked) .deck-btn-arrow,
+  .press-target:hover,
+  .press-target:active {
+    transform: none;
+  }
+
+  /*
+    The press invitation on the timeline chips cannot simply be switched off:
+    the ring is the affordance, and at rest it is fully transparent, so
+    `animation: none` alone would delete the signal rather than calm it. Held
+    still at the opacity it would otherwise pass through instead.
+  */
+  .awaiting-press::after {
+    animation: none;
+    opacity: 0.4;
+    transform: none;
+  }
+
+  /* The dimming still happens -- it carries meaning -- but instantly. */
+  .nation-mark {
+    transition: none;
+  }
+
+  /* Purely decorative, and the only thing it does is move. */
+  .ripple-ring {
+    display: none;
+  }
+}
+
+/*
+  The document itself never scrolls -- the panels do. Applied to <html> by
+  App.jsx on mount rather than written into the stylesheet unconditionally, so
+  that a page which fails to boot still scrolls normally instead of presenting
+  a locked, empty screen.
+*/
+html.is-slides,
+html.is-slides body {
+  overflow: hidden;
+  height: 100%;
+}

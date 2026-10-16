@@ -1,0 +1,400 @@
+"""
+Convert Pacific Data Hub CSV exports into the JSON format used by the frontend.
+
+HOW THE DATA PIPELINE WORKS, for a newcomer. The website never reads the raw
+spreadsheets. Instead:
+  1. You download each dataset as a CSV file from the Pacific Data Hub into
+     data-pipeline/raw/ (the raw files are not kept in git).
+  2. This script (and clean_population_data.py, for population) reads each
+     CSV with pandas, keeps only the four nations and the years in scope,
+     finds the country, year and value columns, and turns blank or
+     non-numeric cells into gaps rather than zeros.
+  3. Each cleaned dataset is written to public/data/<name>.json, and
+     write_bundle() in common.py joins them all into public/data/metrics.json.
+  4. The site downloads that one file (src/utils/loadData.js), and
+     src/utils/metrics.js says how each dataset is labelled and charted.
+The four nations and the year window come from src/content/nations.json and
+roster.json, the same files the site reads. Step-by-step commands are in the
+README, under "Rebuilding the data".
+
+Usage:
+1. Export each dataset from https://stats.pacificdata.org/ into
+   data-pipeline/raw/ using the filenames defined in DATASETS.
+2. Run:
+       python clean_data.py
+3. Cleaned JSON files are written to ../public/data/.
+
+Some portal exports contain multiple indicators in a single CSV. The
+configuration below selects the required indicator (and unit where needed)
+for each dataset.
+"""
+
+import pandas as pd
+
+from common import (
+    COUNTRY_COL_CANDIDATES,
+    NATIONS,
+    OUT_DIR,
+    write_bundle,
+    RAW_DIR,
+    STORMS,
+    TIME_COL_CANDIDATES,
+    VALUE_COL_CANDIDATES,
+    YEAR_MAX,
+    YEAR_MIN,
+    extract_rows,
+    find_col,
+    write_json,
+)
+
+# NATIONS, STORMS and the year window come from common.py, which reads them
+# from src/content/roster.json -- the same file the site reads -- so the
+# pipeline and the site cannot disagree about the project's scope.
+
+# Several metrics below come out of the same portal dataflow, and the portal
+# exports whole dataflows rather than single indicators. Rather than asking for
+# nine identical copies of two files, each dataset lists the filenames it will
+# accept and the first one present wins. That means the five files already in
+# raw/ serve all ten metrics -- adding an indicator costs a DATASETS entry, not
+# another download.
+CLIMATE_CSVS = [
+    "climate_change_indicators.csv",
+    "crop_yield.csv",
+    "power_generation.csv",
+    "tourist_arrivals.csv",
+]
+SDG11_CSVS = [
+    "sdg_11.csv",
+    "disaster_affected_persons.csv",
+    "disaster_economic_loss.csv",
+]
+
+# Dataset configuration: output JSON + which indicator to pull from which dump.
+#
+# Grouped the way the site groups them, because the grouping is an argument
+# rather than a filing convenience. The chain metrics are consequences of a
+# disaster, and they are the patchy ones -- consequence data depends on a
+# country having the capacity to assess and report after being hit, which is
+# precisely what a disaster destroys and precisely what the least-resourced
+# countries have least of. The capacity and context metrics are complete
+# because they are structural or satellite-derived and need nobody to file a
+# return. That asymmetry is not an inconvenience in the data; it is one of the
+# things the data says.
+DATASETS = {
+    "disaster_affected_persons.csv": {
+        "csv_candidates": SDG11_CSVS,
+        "json_name": "disaster_affected_persons.json",
+        "field_name": "affected_persons",
+        "indicator_col": "INDICATOR",
+        "indicator_code": "VC_DSR_AFFCT",
+
+        # Drop rows reported as exactly 0. This series does not distinguish
+        # "nobody was affected" from "nothing was reported", and across this
+        # roster the difference is not subtle: Vanuatu's figure for 2015, the
+        # year Cyclone Pam became the most destructive storm in its history, is
+        # 0. So is Tonga's for 2016, and Fiji's for 2015 and 2017.
+        #
+        # A blank in a chart reads as "not measured". A zero bar reads as
+        # "nothing happened" -- a claim the chart makes on its own authority,
+        # and in these cases a false one. Given the series cannot tell the two
+        # apart, the honest move is to decline to assert either.
+        #
+        # Applied uniformly to every zero in this metric rather than only to
+        # the nation-years we happen to know a storm struck. Overriding the
+        # official source case by case, using our own roster to decide which
+        # zeros are "wrong", would be us editing the data to match what we
+        # already believe. A blanket rule states one checkable thing -- this
+        # series does not distinguish absent from none -- and needs no
+        # judgement about any individual figure.
+        #
+        # The consequence has to be said on the site, not buried here: some
+        # nation-years are missing from these charts because nothing was
+        # reported, and the countries with the least capacity to report are the
+        # ones most often missing. See the caveat in src/utils/metrics.js.
+        "zero_is_missing": True,
+    },
+    "disaster_economic_loss.csv": {
+        "csv_candidates": SDG11_CSVS,
+        "json_name": "disaster_economic_loss.json",
+        "field_name": "economic_loss_usd",
+        "indicator_col": "INDICATOR",
+        "indicator_code": "VC_DSR_AALT",
+
+        # Ignore rows reported in USD_MILLIONS to avoid mixing units.
+        "unit_col": "UNIT_MEASURE",
+        "unit_value": "USD",
+    },
+    "crop_yield.csv": {
+        "csv_candidates": CLIMATE_CSVS,
+        "json_name": "crop_yield.json",
+        "field_name": "crop_yield_index",
+        "indicator_col": "CLIMATE_CHANGE_INDICATORS",
+        "indicator_code": "CROP_YIELD",
+    },
+    "tourist_arrivals.csv": {
+        "csv_candidates": CLIMATE_CSVS,
+        "json_name": "tourist_arrivals.json",
+        "field_name": "tourist_arrivals_index",
+        "indicator_col": "CLIMATE_CHANGE_INDICATORS",
+        "indicator_code": "TRSM_ARR",
+    },
+    "power_generation.csv": {
+        "csv_candidates": CLIMATE_CSVS,
+        "json_name": "power_generation.json",
+        "field_name": "power_generation_index",
+        "indicator_col": "CLIMATE_CHANGE_INDICATORS",
+        "indicator_code": "POWER_GEN",
+    },
+
+    # --- Chain, continued -------------------------------------------------
+    # Livestock yield sits beside crop yield so the food-system link rests on
+    # two records instead of one. Complete for all four nations, 2013-2024.
+    "livestock_yield.csv": {
+        "csv_candidates": CLIMATE_CSVS,
+        "json_name": "livestock_yield.json",
+        "field_name": "livestock_yield_kg",
+        "indicator_col": "CLIMATE_CHANGE_INDICATORS",
+        "indicator_code": "LVST_YIELD",
+    },
+
+    # --- Capacity ---------------------------------------------------------
+    # Number of meteorological monitoring stations. Flat across the whole
+    # period -- Fiji 8, Vanuatu 6, Tonga 4, Solomon Islands 3 -- which is what
+    # makes it useful: it is not a trend, it is a standing difference in who
+    # can observe their own weather. Line it up against the gaps in the chain
+    # metrics above and the ranking is the same. This is the series that turns
+    # "coverage varies by country" from an apology into a finding.
+    "meteo_stations.csv": {
+        "csv_candidates": CLIMATE_CSVS,
+        "json_name": "meteo_stations.json",
+        "field_name": "stations",
+        "indicator_col": "CLIMATE_CHANGE_INDICATORS",
+        "indicator_code": "METEO_MONITOR_NET",
+    },
+
+    # --- Physical context -------------------------------------------------
+    # Sea surface temperature anomaly, in degrees C. The physical driver behind
+    # the one cyclone claim that is well supported: IPCC AR6 finds it likely
+    # that the proportion of Category 3-5 tropical cyclones has risen over the
+    # past four decades.
+    #
+    # Read as a trend, never per storm. The 2015 anomaly is NEGATIVE in three
+    # of four nations, and 2015 is the year of Cyclone Pam -- so a per-storm
+    # reading of this series immediately contradicts itself. The site must say
+    # warming raises the ceiling on intensity, not that a warm year produced a
+    # given storm.
+    "sst_anomaly.csv": {
+        "csv_candidates": CLIMATE_CSVS,
+        "json_name": "sst_anomaly.json",
+        "field_name": "sst_anomaly_c",
+        "indicator_col": "CLIMATE_CHANGE_INDICATORS",
+        "indicator_code": "SST_ANOM",
+    },
+
+    # Sea level anomaly was exported and then cut. The portal reports it to
+    # the nearest 0.1 m, which across this period yields three distinct values
+    # and hides any movement under 10 cm. It underwrites the best-attributed
+    # mechanism available -- higher seas carry a storm surge further inland,
+    # and IPCC AR6 rates the human contribution to sea level rise since 1971
+    # very likely -- but a chart at that resolution claims more precision than
+    # the record has. The sentence is stronger than the chart, so the point is
+    # made in the section copy instead. Re-add SEA_LVL here if a
+    # finer-grained source turns up.
+
+    # Greenhouse gas emissions per head, in tonnes. The one indicator here that
+    # is about responsibility rather than exposure.
+    #
+    # Handle the copy carefully: Solomon Islands is around 0.8 t and genuinely
+    # low, but Fiji is around 3.0 and Tonga 2.8, which are not negligible
+    # globally. "These nations emit almost nothing" would be false for three of
+    # the four. Any comparator figure put on the page needs its own source.
+    "ghg_per_capita.csv": {
+        "csv_candidates": CLIMATE_CSVS,
+        "json_name": "ghg_per_capita.json",
+        "field_name": "ghg_tonnes_per_capita",
+        "indicator_col": "CLIMATE_CHANGE_INDICATORS",
+        "indicator_code": "GHG_EMI_CAPITA",
+    },
+}
+
+def _resolve_source(csv_name: str, config: dict):
+    """First filename in this dataset's candidate list that exists in raw/."""
+    for candidate in config.get("csv_candidates", [csv_name]):
+        path = RAW_DIR / candidate
+        if path.exists():
+            return path
+    return None
+
+
+def clean_one(path, config: dict) -> list:
+    """Clean a single dataset, export it as JSON, and return the rows."""
+    df = pd.read_csv(path, low_memory=False)
+
+    print(f"\n{config['json_name']} (from {path.name})")
+
+    indicator_col = config["indicator_col"]
+    indicator_code = config["indicator_code"]
+
+    if indicator_col not in df.columns:
+        raise KeyError(
+            f"Expected an '{indicator_col}' column to select "
+            f"{indicator_code} -- not found."
+        )
+
+    df = df[df[indicator_col] == indicator_code]
+    print(f"  filtered to indicator {indicator_code}: {len(df)} rows")
+
+    if "unit_col" in config:
+        df = df[df[config["unit_col"]] == config["unit_value"]]
+        print(f"  filtered to unit {config['unit_value']}: {len(df)} rows")
+
+    country_col = find_col(df, COUNTRY_COL_CANDIDATES, "country")
+    time_col = find_col(df, TIME_COL_CANDIDATES, "year")
+    value_col = find_col(df, VALUE_COL_CANDIDATES, "value")
+
+    rows, report = extract_rows(
+        df,
+        country_col,
+        time_col,
+        value_col,
+        config["field_name"],
+        zero_is_missing=config.get("zero_is_missing", False),
+    )
+
+    # One row per nation-year, or nothing is written. The indicator filter
+    # above is the only one applied, which is enough for the exports in use
+    # today -- but SDG 11 carries sex, age, urbanisation and other breakdown
+    # columns, and an export that came back with breakdown rows would put the
+    # same nation-year in the JSON several times, and every chart built on it
+    # would be wrong without looking wrong. clean_population_data.py guards
+    # against the same thing; this is the general form of that check. Not
+    # fixed by filtering each column to "_T", because COMPOSITE_BREAKDOWN is
+    # "_Z" (not applicable) on every row and that filter would drop them all.
+    seen = set()
+    for row in rows:
+        key = (row["nation"], row["year"])
+        if key in seen:
+            raise ValueError(
+                f"{key} appears more than once for {indicator_code}. The export "
+                "carries a breakdown dimension; filter it to its total in this "
+                "dataset's config before cleaning."
+            )
+        seen.add(key)
+
+    for nation, matched_count, in_range_count in report["per_nation"]:
+        print(
+            f"  {nation}: {matched_count} rows matched, "
+            f"{in_range_count} within {YEAR_MIN}-{YEAR_MAX}"
+        )
+
+    if report["dropped_zeros"]:
+        print(
+            f"  dropped {len(report['dropped_zeros'])} zero-valued nation-years as "
+            f"unreported: {sorted(report['dropped_zeros'])}"
+        )
+
+    # Not silent, and not fatal. A blank cell is a gap in the source, which this
+    # project treats as a finding rather than an error -- but an unannounced one
+    # would let a metric quietly lose rows between runs.
+    if report["unreadable"]:
+        print(
+            f"  skipped {report['unreadable']} row(s) whose value could not be "
+            f"read as a number"
+        )
+
+    write_json(OUT_DIR / config["json_name"], rows)
+
+    print(f"  wrote {config['json_name']} ({len(rows)} rows total)")
+    return rows
+
+
+def report_coverage(cleaned: dict) -> None:
+    """Print what the exported data actually covers, per metric and per storm.
+
+    Every dataset here has real gaps, and the gaps are not a flaw to hide --
+    they are part of what the site says. But a gap has to be known before it can
+    be shown honestly, and a silent one becomes a chart that implies a
+    measurement nobody made. This prints them up front so a re-export can be
+    judged before anything is built on it.
+    """
+    print("\n" + "=" * 72)
+    print("COVERAGE BY METRIC")
+    print("=" * 72)
+
+    for csv_name, rows in cleaned.items():
+        config = DATASETS[csv_name]
+        print(f"\n{config['json_name']}")
+        for nation in NATIONS:
+            years = sorted(r["year"] for r in rows if r["nation"] == nation)
+            if not years:
+                print(f"  {nation:<17} NO DATA AT ALL")
+                continue
+            gaps = [y for y in range(min(years), max(years) + 1) if y not in years]
+            line = f"  {nation:<17} {min(years)}-{max(years)}  ({len(years)} of {YEAR_MAX - YEAR_MIN + 1} years)"
+            if gaps:
+                line += f"  gaps: {gaps}"
+            print(line)
+
+    print("\n" + "=" * 72)
+    print("COVERAGE BY STORM")
+    print("=" * 72)
+    print("A storm is supportable for a metric when every in-scope nation it")
+    print("struck has a figure for the storm's own year. Anything less and that")
+    print("storm's chart would be comparing a country against a blank.\n")
+
+    for name, year, nations in STORMS:
+        print(f"{name} ({year}) -- {', '.join(nations)}")
+        for csv_name, rows in cleaned.items():
+            have = {r["nation"] for r in rows if r["year"] == year}
+            missing = [n for n in nations if n not in have]
+            metric = DATASETS[csv_name]["json_name"].replace(".json", "")
+            if not missing:
+                print(f"    OK       {metric}")
+            elif len(missing) == len(nations):
+                print(f"    NONE     {metric}")
+            else:
+                print(f"    PARTIAL  {metric}  -- missing {', '.join(missing)}")
+        print()
+
+
+def main() -> None:
+    any_found = False
+    problems = []
+    cleaned = {}
+
+    for csv_name, config in DATASETS.items():
+        path = _resolve_source(csv_name, config)
+
+        if path is None:
+            candidates = config.get("csv_candidates", [csv_name])
+            print(f"Skipping {config['json_name']} -- none of {candidates} in {RAW_DIR}.")
+            continue
+
+        any_found = True
+
+        try:
+            cleaned[csv_name] = clean_one(path, config)
+        except (KeyError, ValueError) as e:
+            print(f"  PROBLEM in {csv_name}: {e}")
+            problems.append(csv_name)
+
+    if not any_found:
+        print("\nNo raw CSVs found yet.")
+        return
+
+    if problems:
+        print(f"\n{len(problems)} file(s) need attention: {problems}")
+    else:
+        print("\nAll datasets cleaned.")
+
+    if cleaned:
+        report_coverage(cleaned)
+
+    # Always, even on a partial run: write_bundle reads the directory rather
+    # than `cleaned`, so it re-emits the whole of public/data/ and cannot drop
+    # a dataset this run did not touch.
+    write_bundle()
+
+
+if __name__ == "__main__":
+    main()

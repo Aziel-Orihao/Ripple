@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Loaded without blocking first paint. A plain <link rel="stylesheet">
+      held rendering for about a second on a throttled mobile connection
+      while the font CSS came back from a second origin. media="print" lets
+      the browser fetch it at low cost without waiting on it, and onload
+      switches it on; display=swap already meant text paints in the fallback
+      serif first, so the reader sees the same swap they always did, only
+      sooner. The <noscript> copy keeps the font for anyone without
+      JavaScript -- though the page itself needs JavaScript to render at all.
+    -->
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&display=swap"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
+    <title>Ripple — Six cyclones, four Pacific nations, four different recoveries</title>
+    <link rel="canonical" href="https://aziel-orihao-ripple.vercel.app/" />
+    <meta
+      name="description"
+      content="Six severe cyclones across Solomon Islands, Vanuatu, Fiji and Tonga, 2015-2024. An interactive data story on why the same storm leaves neighbours in very different places. Built for the 2026 Pacific DataViz Challenge."
+    />
+
+    <!--
+      Social preview. Without these, a link to the site posted anywhere -- the
+      submission form, a message to a judge, a share between teammates --
+      renders as a bare URL with no title, no description and no image.
+
+      Absolute URLs are required here: og:image in
+      particular has to be an absolute URL: most crawlers do not resolve a
+      relative path, and a broken image is worse than no card at all. The image
+      itself is public/og-image.png, generated from the real crop-yield data
+      rather than a mock-up, so the card can't show a shape the site doesn't.
+
+      STAYS ENGLISH REGARDLESS OF THE LANGUAGE TOGGLE, AND HAS TO. Everything
+      below reads from the raw HTML this file serves, fetched by a
+      server-side bot (Facebook, X, Slack, Discord) that does not execute
+      src/main.jsx or any other JavaScript on this page -- so there is no
+      client-side state a toggle could hand it. <title> is the one exception:
+      see the effect in App.jsx that keeps the browser tab in step after a
+      toggle, which this static tag still gets right at first paint since the
+      site always opens in English (see the French-translation build notes).
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Ripple" />
+    <meta property="og:title" content="Ripple — Six storms, four nations, four different afterwards" />
+    <meta
+      property="og:description"
+      content="Between 2015 and 2024, Solomon Islands, Vanuatu, Fiji and Tonga were each struck three or four times by severe cyclones. An interactive data story on why their recoveries diverged. Built for the 2026 Pacific DataViz Challenge."
+    />
+    <meta property="og:url" content="https://aziel-orihao-ripple.vercel.app/" />
+    <meta property="og:image" content="https://aziel-orihao-ripple.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Ripple: four lines of crop yield, each indexed to its own event-year value, fanning apart."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Ripple — Six storms, four nations, four different afterwards" />
+    <meta
+      name="twitter:description"
+      content="Six severe cyclones, four Pacific nations, and four different recoveries."
+    />
+    <meta name="twitter:image" content="https://aziel-orihao-ripple.vercel.app/og-image.png" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#EAF3F7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1B2226" media="(prefers-color-scheme: dark)" />
+  </head>
+  <body>
+    <!--
+      Runs before React mounts, and before first paint, so a dark-mode visitor
+      doesn't get a frame of the light palette. Deliberately duplicates
+      systemTheme() in src/hooks/useTheme.jsx (the system setting is the only
+      source; no stored choice is read) -- an import couldn't run early enough.
+      Keep the two in step. Live changes after load are handled there.
+    -->
+    <script>
+      (function () {
+        try {
+          if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark')
+        } catch (e) {
+          /* no matchMedia -- fall through to light */
+        }
+      })()
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

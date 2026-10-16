@@ -1,0 +1,221 @@
+/*
+  The type scale, and reading-column treatments opted into per block.
+*/
+
+@layer components {
+  /*
+    THE TYPE SCALE
+
+    Six classes, and every piece of text on the site is one of them. They
+    exist because the scale had drifted: the same eyebrow was written at three
+    letter-spacings and four sizes across the components that used it.
+
+    Roles, not values, which is why they are here rather than in the Tailwind
+    theme: a component asking for `.type-eyebrow` says what the text IS; one
+    asking for `text-xs tracking-[0.14em]` guesses at what it should look
+    like, and the guesses are what drifted.
+
+    Spacing and colour stay at the call site.
+
+    ONE TYPEFACE RULE: the serif is for headings and display figures only.
+    Two exceptions -- the header's wordmark-and-tagline lockup, and
+    .type-figure below.
+  */
+  .type-h2 {
+    @apply font-serif text-2xl font-semibold tracking-tight md:text-3xl;
+  }
+
+  .type-h3 {
+    @apply font-serif text-xl font-semibold tracking-tight;
+  }
+
+  /* Short uppercase framing line, usually directly above a heading. */
+  .type-eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.14em];
+  }
+
+  /*
+    The same treatment one step up, for an uppercase <h3> that titles a block
+    rather than framing one. A step in size only -- same case, weight and
+    tracking -- so the two read as one family rather than two decisions.
+  */
+  .type-subhead {
+    @apply text-sm font-semibold uppercase tracking-[0.14em];
+  }
+
+  /* Quiet uppercase metadata: category, death toll, units under a figure. */
+  .type-meta {
+    @apply text-xs uppercase tracking-[0.14em];
+  }
+
+  /*
+    A statistic set as display type. This is the one place the serif is used on
+    something that is not a heading, and the reason is that Newsreader's figures
+    are most of what separates this page from a dashboard. Size is left to the
+    call site: the number's size is a function of how much of the slide it is
+    meant to hold, not of what kind of thing it is.
+  */
+  .type-figure {
+    @apply font-serif font-semibold tabular-nums;
+  }
+
+  /*
+    Justified text only earns its keep in a real reading column, and only with
+    hyphenation -- unhyphenated justification opens rivers of white space.
+    Opt in per block, so captions and chart notes aren't dragged into it. The
+    class matches the element it is on as well as the paragraphs inside it.
+  */
+  .prose-column,
+  .prose-column p {
+    text-align: justify;
+    hyphens: auto;
+  }
+
+  /*
+    Prose that spans the panel. A slide is a landscape box, and a reading
+    column parked in its left third leaves the right half empty on every
+    section that carries full-width charts beneath it.
+
+    Long lines are the cost, and .prose-column pays it down. Pair the two.
+
+    NOTE ON WHAT THIS DOES. Nothing else sets a max-width on these blocks,
+    so this declaration is a no-op that documents intent rather than a rule that
+    changes anything -- full width is what a <div> does by default. It is kept
+    because the intent is worth stating at the call site, and because a block
+    marked .prose-wide is a block someone has already decided should run the
+    full measure.
+
+    The case that DOES need a rule is prose whose neighbour is a chart, where
+    Tailwind's max-w-prose would stop it short of the figure it describes. That
+    is .figure-prose in styles/layout.css -- a real 65ch
+    cap below the desktop breakpoint, released above it. Reach for .figure-prose
+    when the text belongs to a visualisation, .prose-wide when it is simply
+    body copy that should fill the column.
+  */
+  .prose-wide {
+    max-width: none;
+  }
+
+  /*
+    The escape hatch for .prose-column.
+
+    The mechanism, because the obvious explanation is wrong: it is NOT that
+    short paragraphs justify badly. A line breaks when the next word will not
+    fit, so it carries a leftover of up to one word spread across its gaps.
+    Occasionally a line breaks early and absorbs most of a word -- around 90px
+    over sixteen gaps -- and that line is conspicuous.
+
+    Paragraph length decides whether it matters. In an eight-line block the
+    bad line is bracketed by well-set neighbours and reads as texture. In a
+    two-line block it is half of what the reader sees, and since CSS never
+    justifies a last line it is the only justified line there.
+
+    THE RULE: if a .prose-wide block sets to two or three lines on desktop,
+    add .prose-short; if a later edit takes it to four or more, drop it again.
+    Count lines, not characters. It has to stay below .prose-column in this
+    file -- identical specificity, so source order decides.
+  */
+  .prose-short,
+  .prose-short p {
+    text-align: left;
+    hyphens: manual;
+  }
+
+  /*
+    A COUNTRY NAMED IN A SENTENCE, WHICH IS ALSO A CONTROL.
+
+    See components/NationRef.jsx for what it does. This is the part that decides
+    it still reads as a word.
+
+    It is a <button>, so almost everything here is undoing what a button is:
+    inherited font, no padding, no background, baseline alignment. `display:
+    inline` rather than inline-block is the one that matters -- an inline-block
+    is an unbreakable box, so "Solomon Islands" at the end of a line would push
+    the whole name down instead of breaking between the two words like the
+    prose around it.
+
+    THE UNDERLINE IS THE WHOLE AFFORDANCE, and it is dotted rather than solid
+    so it does not read as a link to somewhere else. These are not navigation:
+    nothing moves, the page does not change, a chart four paragraphs down lights
+    up. A solid underline would promise a destination.
+
+    Colour is deliberately NOT applied at rest. A sentence can carry three of
+    these -- the capacity paragraph names all four nations -- and four coloured
+    words in one paragraph is a link farm. The accent arrives on hover, focus
+    and pin, which is the moment it means something.
+  */
+  .nation-ref {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-decoration-color: rgb(var(--color-accent) / 0.55);
+    text-underline-offset: 0.2em;
+    transition: color 160ms ease, text-decoration-color 160ms ease;
+  }
+
+  .nation-ref:hover,
+  .nation-ref:focus-visible,
+  .nation-ref.is-pinned {
+    color: rgb(var(--color-accent));
+    text-decoration-color: rgb(var(--color-accent));
+  }
+
+  /* Pinned is a state that survives the pointer leaving, so it needs a cue
+     that is not just colour -- the reader may have pinned it a paragraph ago
+     and scrolled. Solid, and slightly heavier. */
+  .nation-ref.is-pinned {
+    text-decoration-style: solid;
+    text-decoration-thickness: 2px;
+  }
+
+  .nation-ref:focus {
+    outline: none;
+  }
+
+  .nation-ref:focus-visible {
+    outline: 2px solid rgb(var(--color-accent));
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /*
+    FIG N, THE TITLE, AND THE SOURCE -- see components/FigureCaption.jsx.
+
+    Sized and coloured to sit with the per-metric caveat it appears above, so
+    the block under a chart reads as one apparatus rather than as two
+    afterthoughts at different weights. The caveat carries a left rule and this
+    does not: the caveat is an aside about the chart, while this is the chart's
+    own label.
+
+    The number is the one part set in the serif. It is the same argument
+    .type-figure makes about statistics -- Newsreader's figures are most of what
+    separates this page from a dashboard -- applied to the one other place a
+    numeral does real work.
+  */
+  .figure-caption {
+    @apply text-xs leading-snug opacity-70;
+  }
+
+  .figure-caption-n {
+    @apply font-serif font-semibold not-italic;
+    opacity: 0.85;
+  }
+
+  .figure-caption a {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    text-decoration-color: rgb(var(--color-accent) / 0.5);
+  }
+
+  .figure-caption a:hover,
+  .figure-caption a:focus-visible {
+    color: rgb(var(--color-accent));
+    text-decoration-color: rgb(var(--color-accent));
+  }
+}

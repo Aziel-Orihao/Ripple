@@ -1,0 +1,82 @@
+/** @type {import('tailwindcss').Config} */
+
+export default {
+  // Class-based, but the class only ever mirrors the system setting: the
+  // inline script in index.html sets it before first paint and
+  // hooks/useTheme.jsx keeps it in step with live changes. Kept as a class
+  // rather than 'media' because the generated token block
+  // (scripts/build-tokens.mjs) and a few rules in styles/ select on `.dark`.
+  darkMode: 'class',
+
+  content: [
+    './index.html',
+    './src/**/*.{js,jsx}',
+  ],
+
+  theme: {
+    extend: {
+      // ONE EXTRA BREAKPOINT, AND IT IS ABOUT HEIGHT.
+      //
+      // Measured across the whole deck, the thing that separates a comfortable
+      // laptop from a cramped one is height, not width: at 1440x900 every
+      // slide fits, and at 1366x768 -- barely narrower -- the timeline, the
+      // map and the journey all overflow. A width-only rule would tighten a
+      // 1280x1024 window that has room to spare and leave a 1600x768 one
+      // broken.
+      //
+      // The min-width guard keeps it away from a phone in landscape, which is
+      // short by definition and already has its own layout.
+      //
+      // The 1100-1399px width rules are a plain media query in
+      // styles/compact.css, not a Tailwind variant.
+      screens: {
+        short: { raw: '(min-width: 1024px) and (max-height: 960px)' },
+      },
+
+      // Headings and the wordmark only; body, UI and data stay on the system
+      // sans Tailwind's preflight already sets. An editorial serif is what
+      // separates a data story from a dashboard, and one face used with
+      // restraint is cheaper than two used everywhere.
+      //
+      // Georgia leads the fallback because its metrics are close enough that a
+      // swap after the webfont lands doesn't visibly reflow a headline.
+      fontFamily: {
+        serif: ['Newsreader', 'Georgia', 'ui-serif', 'serif'],
+      },
+
+      // THE DE-EMPHASIS SCALE, AS THREE NAMED LEVELS RATHER THAN FIVE NUMBERS.
+      //
+      // `opacity-soft` resolves per theme through the custom properties
+      // styles/tokens.css generates -- see DIM_TOKENS in styles/tokens.js for
+      // the values and why the two themes need different ones. Numeric
+      // utilities (opacity-40, opacity-60) still exist and still mean exactly
+      // what they say; they are the right tool for anything that is not text
+      // stepping back from its own background.
+      opacity: {
+        faint: 'var(--dim-faint)',
+        quiet: 'var(--dim-quiet)',
+        soft: 'var(--dim-soft)',
+      },
+
+      colors: {
+        // Theme-aware colours. The values are defined in src/styles/tokens.js,
+        // which scripts/build-tokens.mjs turns into the --color-* custom
+        // properties (light on :root, dark on .dark).
+        // <alpha-value> lets Tailwind's opacity modifiers (e.g. text-ink/70)
+        // substitute the real opacity value in place of this placeholder --
+        // without it, every /NN utility built on these four colors silently
+        // stops generating any rule at all.
+        ink: 'rgb(var(--color-ink) / <alpha-value>)',
+        sand: 'rgb(var(--color-sand) / <alpha-value>)',
+        panel: 'rgb(var(--color-panel) / <alpha-value>)',
+        surface: 'rgb(var(--color-surface) / <alpha-value>)',
+        // Text-safe ocean, for eyebrows and other small text. The decorative
+        // ocean (#5B8FA3) cannot carry text -- see the note on `accent` in
+        // src/styles/tokens.js.
+        accent: 'rgb(var(--color-accent) / <alpha-value>)',
+      },
+    },
+  },
+
+  plugins: [],
+};

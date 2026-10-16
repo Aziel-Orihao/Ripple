@@ -1,0 +1,28 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
+*.log
+
+# Editor settings, and per-machine assistant/tool config (MCP servers)
+.vscode/
+.idea/
+.mcp.json
+
+# Python, for the data pipeline (see README.md -> "Rebuilding the data")
+__pycache__/
+*.pyc
+.venv/
+
+# Raw Pacific Data Hub exports -- regenerate any time with the commands in
+# README.md -> "Rebuilding the data". A few MB each and whole-dataflow
+# dumps, not worth carrying in git history.
+data-pipeline/raw/*.csv
+
+# Generated from src/styles/tokens.js by scripts/build-tokens.mjs, and
+# rewritten by Vite before every build and dev server start. Committing it
+# would mean a second place for the palette to be wrong.
+src/styles/tokens.css

@@ -1,0 +1,799 @@
+/*
+  The slideshow deck: stage, panels, scroll containment and controls.
+*/
+
+@layer components {
+  /*
+    THE STAGE
+
+    A horizontal flex track inside a clipped viewport. Every panel is
+    `flex: 0 0 100%`, so each has its full correct width whether or not it is
+    on screen. That is load-bearing: ResizeObserver keeps firing for off-stage
+    charts, useElementWidth keeps returning real pixels, and no chart is ever
+    measured in a box of zero width.
+
+    Panels scroll vertically inside themselves; the stage pages horizontally.
+    The two gestures never share an axis, which is why there is no
+    swipe-to-page binding anywhere in this build.
+  */
+  .slide-viewport {
+    position: relative;
+    overflow: hidden;
+    /* dvh, not vh: mobile browser chrome makes vh lie by roughly the height of
+       the address bar, which would put every panel's footer below the fold. */
+    height: calc(100dvh - var(--header-height));
+  }
+
+  /*
+    The track has no transform transition of its own: it jumps instantly. The
+    reader never sees the jump, because it happens mid-drop, hidden under the
+    ripple-droplet cover in utils/rippleTransition.js -- the one page-change
+    animation for the whole site -- so this gets no second, competing motion.
+  */
+  .slide-track {
+    display: flex;
+    height: 100%;
+  }
+
+  .slide-panel {
+    flex: 0 0 100%;
+    height: 100%;
+    /* The panel never scrolls -- overflow belongs one level in, to
+       .slide-scroll -- so the frame holds still at exactly one screen on
+       every slide while only the content moves. */
+    overflow: hidden;
+    /* Off-stage panels fade rather than sitting at full strength just off the
+       edge -- with a fast pager the neighbour is briefly visible mid-transition
+       and a hard-edged one reads as a rendering fault. */
+    opacity: 1;
+    transition: opacity 320ms ease-out;
+  }
+
+  .slide-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    /* Stops the inner scroll chaining out when it bottoms out, which on iOS
+       reads as the whole page bouncing. */
+    overscroll-behavior: contain;
+    /* Explicit. Setting overflow-y alone makes overflow-x compute to auto, and
+       the slide-enter animation translates sideways -- so the entrance was
+       briefly adding horizontal scrollable area to every panel. */
+    overflow-x: hidden;
+    /* Hidden like the document's; .slide-more carries the affordance. */
+    scrollbar-width: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .slide-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* `> *`, not `> section`: the sources panel renders a <footer>, so it fell
+     through to flex:0 1 auto, shrank below its own content, and clipped it. */
+  .slide-scroll > * {
+    flex: 1 0 auto;
+  }
+
+  .slide-panel[data-active="false"] {
+    opacity: 0;
+  }
+
+  /*
+    OFF-STAGE SLIDES DO NOT GET TO ANIMATE.
+
+    All fourteen panels stay mounted, and that is deliberate and load-bearing --
+    every chart measures a real DOM node and waits on a real
+    IntersectionObserver, so an unmounted section is a chart drawn at zero
+    width. See the note at the top of PageSections.jsx.
+
+    What does not follow is that they should all keep moving. `opacity: 0`
+    hides a layer; it does not stop its animation. Every section mounts an
+    Atmosphere whose ring runs `infinite`, and every content section paints a
+    scatter backdrop -- so thirteen slides
+    nobody can see were compositing continuously, on the mid-range phones this
+    stylesheet's own opening comment names as the reason everything here is
+    restricted to transform and opacity.
+
+    Safe to switch off rather than merely pause, and that is the point: both
+    layers are `position: absolute` and `pointer-events: none`, so they are out
+    of flow and out of the hit-testing tree. Nothing here changes a measurement,
+    which is the constraint that makes the all-mounted design work.
+  */
+  .slide-panel[data-active="false"] .atmos-layer,
+  .slide-panel[data-active="false"] .backdrop-layer {
+    display: none;
+  }
+
+  /* Paused rather than removed, so arriving at a slide does not snap the glyph
+     back to zero rotation. This one is a mark on the journey map, outside the
+     atmosphere layer above. */
+  .slide-panel[data-active="false"] .cyclone-spin {
+    animation-play-state: paused;
+  }
+
+  /* An invitation to press something the reader cannot currently see. */
+  .slide-panel[data-active="false"] .awaiting-press::after {
+    animation: none;
+  }
+
+  /*
+    THE CHROMELESS BOOKENDS -- the opening poem and the closing sources slide.
+    See `chromeless` in App.jsx for which slides carry it and why.
+
+    THE HEADER IS FADED, NOT UNMOUNTED, and that is load-bearing rather than
+    tidy. It is one fixed element for the whole app, and App.jsx measures its
+    height with a ResizeObserver to derive both <main>'s top padding and
+    --header-height. Unmounting it would report zero and take the layout with
+    it; `display: none` would do the same by removing the box. Opacity and
+    visibility leave it fully laid out and fully measurable while it is gone
+    from view.
+
+    visibility is what takes it out of the tab order and the accessibility
+    tree -- pointer-events alone would leave a screen-reader user reading a
+    header that is not on screen, and a Tab press landing on an invisible
+    section menu. It is delayed by the length of the fade so the header is
+    still painted while it dissolves, and only stops existing once it has.
+
+    Transform and opacity only, so the fade itself stays on the compositor.
+    320ms matches .slide-panel's own crossfade above: this is the same event
+    seen from outside the deck, and two different durations would read as two
+    different things happening.
+  */
+  .site-header {
+    transition:
+      opacity 320ms ease-out,
+      transform 320ms ease-out;
+  }
+
+  .site-header.is-hidden {
+    opacity: 0;
+    transform: translateY(-100%);
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      opacity 320ms ease-out,
+      transform 320ms ease-out,
+      visibility 0s linear 320ms;
+  }
+
+  /*
+    The bookends' one control, in place of the footer bar. Positioned against
+    the panel rather than sitting in the flex column, so the slide's own
+    content runs the full height of the panel behind it -- which is the whole
+    point of taking the footer away.
+
+    A single button with no bar, no counter and no destination label beyond
+    one word. The footer names where you are going because the middle of a
+    deck needs it; a bookend has only one direction available and nothing to
+    disambiguate.
+  */
+  .slide-edge-nav {
+    position: absolute;
+    z-index: 2;
+    bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(var(--color-ink) / 0.15);
+    background: rgb(var(--color-panel) / 0.75);
+    padding: 0.625rem 1.125rem;
+    /* 44px, the same minimum every other press target on the site keeps. */
+    min-height: 44px;
+    color: rgb(var(--color-ink) / 0.75);
+    font-size: 0.875rem;
+    backdrop-filter: blur(6px);
+    transition:
+      color 180ms ease-out,
+      border-color 180ms ease-out;
+  }
+
+  .slide-edge-nav:hover {
+    color: rgb(var(--color-ink));
+    border-color: rgb(var(--color-ink) / 0.35);
+  }
+
+  .slide-edge-nav-forward {
+    right: 1.5rem;
+  }
+
+  .slide-edge-nav-back {
+    left: 1.5rem;
+  }
+
+  @media (min-width: 640px) {
+    .slide-edge-nav {
+      bottom: 2rem;
+    }
+
+    .slide-edge-nav-forward {
+      right: 2rem;
+    }
+
+    .slide-edge-nav-back {
+      left: 2rem;
+    }
+  }
+
+  /*
+    THE POEM'S LANGUAGE TOGGLE, CARRIED OUT TO THE PANEL EDGE.
+
+    With the header faded out the poem hosts the only language control on that
+    slide, and it has to read as a page-level control rather than as the first
+    line of the poem's layout. Right-aligning it inside .section-content is not
+    enough: that column is `narrow` (48rem), so the button lands well inside
+    the text block with the poem starting immediately beneath it.
+
+    The same escape .section-bleed uses -- 100cqw against the section's
+    container-type, pulled back by half the difference -- but without that
+    class's surface fill and border-block, which would paint a band behind a
+    bare 36px button. It resolves against the section rather than the viewport,
+    which is the distinction that matters inside a deck of transformed panels.
+
+    The result sits at --section-pad from the panel edge, the same inset
+    .slide-edge-nav takes at the bottom, so the slide's two controls line up on
+    opposite corners. Below the breakpoint the column is already the full width
+    of the section, so `50% - 50cqw` evaluates to zero and this quietly becomes
+    a plain right-aligned row -- which is the correct answer on a phone, where
+    there is no margin to escape into.
+  */
+  .poem-chrome {
+    width: 100cqw;
+    max-width: 100cqw;
+    margin-inline: calc(50% - 50cqw);
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /*
+    THE EDGE CONTROL FLOATS, SO THE CONTENT HAS TO CLEAR IT.
+
+    SlideFooter is a real box in the flex column, so a panel's content could
+    never run underneath it. .slide-edge-nav is positioned, which is what lets
+    the slide fill the panel -- and it means the last line of a scrolling
+    bookend would otherwise finish behind the button. It did: on a 390px-wide
+    window the poem's closing stanza was half hidden by "Begin".
+
+    6.5rem is the control's 44px plus its 1.5rem offset plus the 3rem of
+    bottom padding every slide in the deck already carries, which is what the
+    reader sees as the gap after the last line elsewhere.
+  */
+  .slide-viewport .slide-panel[data-chromeless] .slide-scroll > * {
+    padding-bottom: 6.5rem;
+  }
+
+  /*
+    The "more below" chevron clears the footer by 4.75rem. On a bookend there
+    is no footer to clear, so it sits with the edge control instead -- the
+    poem is long enough to scroll on a short window, which is exactly when
+    this matters.
+  */
+  .slide-viewport.is-chromeless .slide-more {
+    bottom: 1.5rem;
+  }
+
+  @media (min-width: 640px) {
+    .slide-viewport.is-chromeless .slide-more {
+      bottom: 2rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .site-header,
+    .site-header.is-hidden {
+      transition: none;
+    }
+
+    .slide-edge-nav {
+      transition: none;
+    }
+  }
+
+  /* height, not min-height. A floor with no ceiling let a tall section grow
+     the flex column to fit, so .slide-scroll never overflowed and never
+     scrolled, and the footer was pushed past the panel's clip and vanished.
+     min-height:0 is the companion -- without it a flex child refuses to
+     shrink below its content and the ceiling is ignored again. */
+  .slide-panel-inner {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    /* The containing block for .slide-edge-nav on a chromeless bookend. Without
+       it that absolute element resolves against .slide-track -- which carries a
+       transform, and so is a containing block for absolute descendants -- and
+       every panel's control would stack at the same place on screen instead of
+       staying inside its own panel. */
+    position: relative;
+  }
+
+  /* "There is more down there." The one affordance the deck adds back rather
+     than preserves: every scrollbar on the site is hidden, so nothing else
+     says a panel continues past its bottom edge. Sits outside the track so it
+     holds still while the panel scrolls under it. */
+  .slide-more {
+    position: absolute;
+    inset-inline: 0;
+    /* Clears the pinned footer rather than sitting under it. The footer is two
+       lines of button plus its own padding; 4.75rem is that, measured. */
+    bottom: 4.75rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding-bottom: 0.6rem;
+    padding-top: 0.4rem;
+    color: rgb(var(--color-ink));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 260ms ease-out;
+  }
+
+  .slide-more.is-visible {
+    opacity: 0.75;
+    animation: slide-more-nudge 2.4s ease-in-out infinite;
+  }
+
+  @keyframes slide-more-nudge {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(3px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slide-more.is-visible {
+      animation: none;
+    }
+  }
+
+  /*
+    VERTICAL CENTRING, BY MEASUREMENT
+
+    A slide that fits its panel is centred in it; a slide taller than the
+    panel sits against the top edge and scrolls. Which one it gets is decided
+    per panel, on every resize, by PageSections.jsx and published as
+    data-fits. A hand-placed class can only ever be right for one window.
+  */
+  /*
+    Follow the Storm is excluded, structurally rather than cosmetically: it
+    does not sit inside its panel, it *is* the panel, and every height in the
+    chain (section -> wrapper -> split -> steps) resolves from it filling the
+    box. Centring inside it aligns against free space that is not supposed to
+    exist, and the step column stops being a bounded scroller.
+  */
+  .slide-viewport .slide-scroll[data-fits="true"] > *:not(.journey-section) {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    /* Backstop for the frames between content growing and the measurement
+       catching up: `safe` falls back to start alignment rather than pushing
+       the top edge above the scroll origin where it cannot be reached. */
+    justify-content: safe center;
+  }
+
+  /*
+    Slides bounded by construction -- a heading, a few paragraphs, one
+    fixed-height chart -- where a scrollbar is a layout fault rather than more
+    to read. overflow:hidden caps the section at one panel and stops a
+    descendant escaping its own box and extending the scrollable region.
+
+    Gated on viewport height: below this the content may genuinely not fit,
+    and clipping it would hide the chart rather than tidy the layout.
+  */
+  @media (min-height: 640px) {
+    .slide-viewport .slide-scroll > .section-lock {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: 100%;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+  }
+
+  /* A panel is one screen, so the document's generous section padding is
+     tightened in deck layout. The bottom stays looser than the top: a
+     scrolling panel ends where its last line ends, and a caveat pressed
+     against the footer reads as a slide that was cut off. */
+  .slide-viewport .slide-scroll > * {
+    padding-top: 1.75rem;
+    padding-bottom: 3rem;
+  }
+
+  /* The map is the tallest object on the site and has no natural ceiling --
+     it is sized from its own width, so on a wide window it grew past a screen
+     and took its section with it. */
+  .slide-viewport .map-frame svg {
+    /* width stays 100%: an SVG with a viewBox has an aspect ratio but no
+       intrinsic width, so `width: auto` with an auto height lets some engines
+       fall back to the 300x150 replaced-element default. A definite width and
+       a clamped height lets preserveAspectRatio do the scaling. */
+    height: auto;
+    max-height: 52vh;
+  }
+
+  /* On a phone the map must leave room for the control that selects a
+     country: 52vh plus a heading plus four rows plus the summary does not
+     fit, and what got pushed off was the list. */
+  @media (max-width: 639px) {
+    .slide-viewport .map-frame svg {
+      max-height: 30vh;
+    }
+  }
+
+  /* The header's twin at the other edge of the frame. sticky, not fixed,
+     because it belongs to the panel -- fixed would leave one footer floating
+     over all fourteen of them. */
+  .slide-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    margin-top: auto;
+    /* Never shrinks. If it gives up height under pressure from a tall
+       section, its position stops being the same on every slide. */
+    flex: 0 0 auto;
+  }
+
+  /*
+    FOLLOW THE STORM
+
+    The one section that pages differently. Its left column is the map and it
+    is pinned; only the right column scrolls. So the panel around it must not
+    scroll at all, or the outer and inner scrolls compete for the same wheel
+    gesture. The section is height-locked to one panel and the overflow is
+    handed to the detail column alone.
+  */
+  @media (min-width: 768px) {
+    .slide-viewport .slide-scroll > .journey-section {
+      display: flex;
+      min-height: 0;
+      flex: 1 1 auto;
+      flex-direction: column;
+      overflow: hidden;
+      /* Stated, not inherited by luck -- see the data-fits exclusion above. */
+      justify-content: normal;
+    }
+
+    .slide-viewport .journey-section > div {
+      display: flex;
+      min-height: 0;
+      flex: 1 1 auto;
+      flex-direction: column;
+    }
+
+    .slide-viewport .journey-split {
+      min-height: 0;
+      flex: 1 1 auto;
+      margin-top: 1.25rem;
+      /* The section carries md:items-start, which sizes both columns to their
+         own content -- so the step column's height:100% resolved against a row
+         as tall as the whole list and it never scrolled. An explicit
+         minmax(0, 1fr) row, stretched, gives both exactly the height available. */
+      grid-template-rows: minmax(0, 1fr);
+      align-items: stretch;
+    }
+
+    /* The right column: the scrubber, then the stop it has landed on. It
+       bounds and scrolls itself so it cannot push the panel past one screen. */
+    .slide-viewport .journey-detail {
+      display: flex;
+      min-height: 0;
+      height: 100%;
+      flex-direction: column;
+      /* Anchored to the top, not centred: centring made the scrubber's
+         position depend on the length of the text below it, so the one
+         control that must not move drifted while it was in use. */
+      justify-content: flex-start;
+      overflow: hidden;
+      padding-right: 0.75rem;
+    }
+
+    /* The stop box takes what the column has left after the scrubber and
+       scrolls inside that, so the scrubber cannot be scrolled off the top. */
+    .slide-viewport .journey-detail .journey-stop {
+      flex: 1 1 auto;
+      height: auto;
+      min-height: 0;
+    }
+  }
+
+  /* The journey map is sticky against its scrolling ancestor. Here that
+     ancestor is the panel, which already starts below the header, so the
+     document's header offset would push it a header's height down. */
+  .slide-viewport .journey-sticky {
+    top: 0.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .slide-viewport .journey-sticky {
+      position: static;
+      display: flex;
+      height: 100%;
+      min-height: 0;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .slide-viewport .journey-sticky svg {
+      min-height: 0;
+      max-height: 100%;
+    }
+  }
+
+  /*
+    SLIDE TRANSITIONS
+
+    There are none in this file: page changes and language switches all use
+    the ripple-droplet transition in utils/rippleTransition.js, so nothing here
+    animates the track or the entering panel.
+  */
+
+  /* The counter is the one part of the footer whose meaning changes on every
+     move, so it is the one part that acknowledges the move. */
+  .slide-panel[data-active="true"] .deck-count {
+    animation: deck-count-in 420ms 140ms cubic-bezier(0.16, 0.84, 0.28, 1) both;
+  }
+
+  @keyframes deck-count-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+
+    to {
+      /* The token, not a typed number. `both` fill means this keyframe's
+         value is what the counter keeps for the life of the element, so a
+         literal here would silently outrank the opacity utility on the span
+         (a typed 0.5 leaves the counter at 2.84:1 contrast in light mode).
+         Reading the same custom property the utility does keeps the two in
+         step. */
+      opacity: var(--dim-quiet);
+      transform: translateY(0);
+    }
+  }
+
+  /*
+    DECK BUTTONS
+
+    One shared shape for Back and Next, so the two ends of the footer behave
+    identically under the pointer.
+  */
+  /* The destination, above the buttons, on phones only. One line, truncated
+     rather than wrapped: a wrapping destination would change the footer's
+     height from section to section. */
+  .deck-destination {
+    position: relative;
+    margin: 0 auto;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 0.4rem 1rem 0;
+    text-align: center;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 0.7rem;
+    letter-spacing: 0.02em;
+  }
+
+  .deck-btn {
+    display: flex;
+    min-width: 0;
+    /* 44px, the same floor every control in the body uses. */
+    min-height: 44px;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 0.5rem;
+    border-width: 1px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition:
+      transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      background-color 180ms ease-out,
+      border-color 180ms ease-out;
+  }
+
+  .deck-btn:focus {
+    outline: none;
+  }
+
+  .deck-btn:focus-visible {
+    outline: 2px solid rgb(var(--color-accent));
+    outline-offset: 2px;
+  }
+
+  .deck-btn-back {
+    border-color: rgb(var(--color-ink) / 0.15);
+    text-align: left;
+  }
+
+  .deck-btn-back:hover {
+    border-color: rgb(var(--color-ink) / 0.35);
+    background-color: rgb(var(--color-surface) / 0.6);
+    transform: translateX(-2px);
+  }
+
+  .deck-btn-next {
+    border-color: rgb(var(--color-accent) / 0.4);
+    background-color: rgb(var(--color-accent) / 0.1);
+    font-weight: 500;
+    text-align: right;
+  }
+
+  .deck-btn-next:hover:not(.is-blocked) {
+    background-color: rgb(var(--color-accent) / 0.2);
+    transform: translateX(2px);
+  }
+
+  .deck-btn:active:not(.is-blocked) {
+    transform: scale(0.97);
+  }
+
+  .deck-btn-arrow {
+    opacity: 0.5;
+    transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .deck-btn-back:hover .deck-btn-arrow {
+    transform: translateX(-3px);
+  }
+
+  .deck-btn-next:hover:not(.is-blocked) .deck-btn-arrow {
+    transform: translateX(3px);
+  }
+
+  .deck-btn.is-blocked {
+    cursor: not-allowed;
+    border-style: dashed;
+    border-color: rgb(var(--color-ink) / 0.25);
+    background-color: transparent;
+    font-weight: 400;
+    opacity: 0.6;
+  }
+
+  /* The answer to pressing a button that will not move. A refusal the reader
+     can feel beats one they have to infer from nothing happening. */
+  .deck-btn.is-refusing {
+    animation: deck-refuse 340ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+
+  @keyframes deck-refuse {
+    10%,
+    90% {
+      transform: translateX(-2px);
+    }
+
+    20%,
+    80% {
+      transform: translateX(3px);
+    }
+
+    30%,
+    50%,
+    70% {
+      transform: translateX(-5px);
+    }
+
+    40%,
+    60% {
+      transform: translateX(5px);
+    }
+  }
+
+  /*
+    SELECTION FEEDBACK
+
+    Anything the reader can turn on and off: storm cards, map markers, the
+    nation legend. A press gives, a release springs back slightly past its
+    resting size, and the selected state settles.
+  */
+  .press-target {
+    transition:
+      transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      background-color 200ms ease-out,
+      border-color 200ms ease-out,
+      box-shadow 200ms ease-out;
+  }
+
+  .press-target:hover {
+    transform: translateY(-2px);
+  }
+
+  .press-target:active {
+    transform: translateY(0) scale(0.97);
+  }
+
+  .press-target[aria-pressed="true"] {
+    animation: press-confirm 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 0 0 1px rgb(var(--color-accent) / 0.35);
+  }
+
+  @keyframes press-confirm {
+    0% {
+      transform: scale(0.96);
+    }
+
+    55% {
+      transform: scale(1.035);
+    }
+
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  /* The selection strip arrives rather than appearing, since it turns up in a
+     header the reader is not looking at. */
+  .deck-status {
+    animation: deck-status-in 420ms cubic-bezier(0.16, 0.84, 0.28, 1) both;
+  }
+
+  @keyframes deck-status-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /*
+    PRINT: THE ONE PLACE THE DECK UNROLLS.
+
+    A paginated deck cannot be printed -- fourteen slides come out as one
+    clipped page -- and this is the only route to a searchable copy of the
+    whole piece, which matters because find-in-page only reaches the slide on
+    screen (off-stage panels are inert, and Chrome excludes inert content).
+
+    Nothing here needs a class on the tree: all fourteen sections are always
+    in the DOM, so unrolling them is only a matter of undoing the layout.
+  */
+  @media print {
+    .slide-viewport {
+      overflow: visible !important;
+      height: auto !important;
+    }
+
+    .slide-track {
+      display: block !important;
+      transform: none !important;
+    }
+
+    .slide-panel,
+    .slide-panel-inner,
+    .slide-scroll {
+      display: block !important;
+      height: auto !important;
+      overflow: visible !important;
+      opacity: 1 !important;
+    }
+
+    .slide-panel[inert],
+    .slide-panel[aria-hidden="true"] {
+      display: block !important;
+    }
+
+    .slide-footer,
+    .slide-more {
+      display: none !important;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slide-track {
+      transition: none;
+    }
+    .slide-panel {
+      transition: none;
+    }
+  }
+}
